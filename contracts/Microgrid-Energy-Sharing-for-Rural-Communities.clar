@@ -8,8 +8,14 @@
 (define-constant ERR_TRADE_NOT_FOUND (err u106))
 (define-constant ERR_CANNOT_BUY_OWN_ENERGY (err u107))
 (define-constant ERR_INSUFFICIENT_ENERGY (err u108))
+(define-constant ERR_INVALID_PRICE_MULTIPLIER (err u109))
 
 (define-data-var contract-active bool true)
+(define-data-var base-energy-price uint u50)
+(define-data-var total-energy-supply uint u0)
+(define-data-var total-energy-demand uint u0)
+(define-data-var price-update-threshold uint u100)
+(define-data-var last-price-update uint u0)
 (define-data-var total-energy-traded uint u0)
 (define-data-var total-users uint u0)
 (define-data-var listing-nonce uint u0)
@@ -156,7 +162,9 @@
       }
     )
     (var-set listing-nonce listing-id)
-    (ok listing-id)
+    (var-set total-energy-supply (+ (var-get total-energy-supply) amount))
+    (let ((price-result (update-market-price)))
+      (ok listing-id))
   )
 )
 
@@ -207,7 +215,12 @@
     )
     (var-set trade-nonce trade-id)
     (var-set total-energy-traded (+ (var-get total-energy-traded) amount))
-    (ok trade-id)
+    (var-set total-energy-demand (+ (var-get total-energy-demand) amount))
+    (var-set total-energy-supply (if (>= (var-get total-energy-supply) amount)
+      (- (var-get total-energy-supply) amount)
+      u0))
+    (let ((price-result (update-market-price)))
+      (ok trade-id))
   )
 )
 
@@ -389,5 +402,128 @@
       )
     )
     (ok bonus-amount)
+  )
+)
+
+(define-read-only (get-current-market-price)
+  (var-get base-energy-price)
+)
+
+(define-read-only (get-market-stats)
+  {
+    base-price: (var-get base-energy-price),
+    total-supply: (var-get total-energy-supply),
+    total-demand: (var-get total-energy-demand),
+    current-price: (calculate-dynamic-price),
+    last-update: (var-get last-price-update)
+  }
+)
+
+(define-read-only (calculate-dynamic-price)
+  (let ((supply (var-get total-energy-supply))
+        (demand (var-get total-energy-demand))
+        (base-price (var-get base-energy-price)))
+    (if (is-eq supply u0)
+      (* base-price u2)
+      (let ((demand-ratio (/ (* demand u100) supply)))
+        (if (> demand-ratio u150)
+          (* base-price u2)
+          (if (> demand-ratio u120)
+            (+ base-price (/ base-price u2))
+            (if (< demand-ratio u80)
+              (- base-price (/ base-price u4))
+              base-price
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+(define-read-only (calculate-supply-demand-ratio)
+  (let ((supply (var-get total-energy-supply))
+        (demand (var-get total-energy-demand)))
+    (if (is-eq supply u0)
+      u200
+      (/ (* demand u100) supply)
+    )
+  )
+)
+
+(define-public (update-market-price)
+  (let ((current-height stacks-block-height)
+        (last-update (var-get last-price-update))
+        (threshold (var-get price-update-threshold))
+        (new-price (calculate-dynamic-price)))
+    (if (>= (- current-height last-update) threshold)
+      (begin
+        (var-set base-energy-price new-price)
+        (var-set last-price-update current-height)
+        (ok new-price)
+      )
+      (ok (var-get base-energy-price))
+    )
+  )
+)
+
+(define-public (set-price-update-threshold (new-threshold uint))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_NOT_AUTHORIZED)
+    (asserts! (> new-threshold u0) ERR_INVALID_AMOUNT)
+    (var-set price-update-threshold new-threshold)
+    (ok new-threshold)
+  )
+)
+
+(define-public (manual-price-adjustment (multiplier uint))
+  (let ((current-price (var-get base-energy-price)))
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_NOT_AUTHORIZED)
+    (asserts! (and (>= multiplier u50) (<= multiplier u200)) ERR_INVALID_PRICE_MULTIPLIER)
+    (var-set base-energy-price (/ (* current-price multiplier) u100))
+    (var-set last-price-update stacks-block-height)
+    (ok (var-get base-energy-price))
+  )
+)
+
+(define-public (reset-supply-demand-counters)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_NOT_AUTHORIZED)
+    (var-set total-energy-supply u0)
+    (var-set total-energy-demand u0)
+    (ok true)
+  )
+)
+
+(define-read-only (get-price-recommendation (amount uint) (listing-type (string-ascii 10)))
+  (let ((market-price (calculate-dynamic-price))
+        (supply-ratio (calculate-supply-demand-ratio)))
+    (if (is-eq listing-type "urgent")
+      (* market-price u1)
+      (if (< supply-ratio u80)
+        (- market-price (/ market-price u10))
+        (if (> supply-ratio u120)
+          (+ market-price (/ market-price u10))
+          market-price
+        )
+      )
+    )
+  )
+)
+
+(define-read-only (estimate-optimal-listing-time)
+  (let ((supply-ratio (calculate-supply-demand-ratio)))
+    (if (> supply-ratio u150)
+      {
+        recommended-action: "wait",
+        reason: "high-demand-period",
+        price-multiplier: u150
+      }
+      {
+        recommended-action: "list-now",
+        reason: "favorable-conditions",
+        price-multiplier: u100
+      }
+    )
   )
 )
