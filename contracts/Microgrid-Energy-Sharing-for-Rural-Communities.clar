@@ -10,6 +10,8 @@
 (define-constant ERR_INSUFFICIENT_ENERGY (err u108))
 (define-constant ERR_INVALID_PRICE_MULTIPLIER (err u109))
 
+(define-constant REFERRAL_REWARD u10)
+
 (define-data-var contract-active bool true)
 (define-data-var base-energy-price uint u50)
 (define-data-var total-energy-supply uint u0)
@@ -30,7 +32,9 @@
     reputation-score: uint,
     is-producer: bool,
     location: (string-ascii 50),
-    registered-at: uint
+    registered-at: uint,
+    has-traded: bool,
+    referrer: (optional principal)
   }
 )
 
@@ -97,7 +101,7 @@
   (* amount price-per-kwh)
 )
 
-(define-public (register-user (location (string-ascii 50)) (is-producer bool))
+(define-public (register-user (location (string-ascii 50)) (is-producer bool) (referrer (optional principal)))
   (let ((user tx-sender))
     (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
     (asserts! (is-none (map-get? users user)) ERR_ALREADY_REGISTERED)
@@ -109,7 +113,9 @@
         reputation-score: u100,
         is-producer: is-producer,
         location: location,
-        registered-at: stacks-block-height
+        registered-at: stacks-block-height,
+        has-traded: false,
+        referrer: referrer
       }
     )
     (var-set total-users (+ (var-get total-users) u1))
@@ -175,18 +181,27 @@
         (seller (get seller listing))
         (seller-data (unwrap! (map-get? users seller) ERR_INVALID_USER))
         (total-cost (calculate-energy-cost amount (get price-per-kwh listing)))
-        (trade-id (+ (var-get trade-nonce) u1)))
+        (trade-id (+ (var-get trade-nonce) u1))
+        (is-first-trade (not (get has-traded buyer-data))))
     (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
     (asserts! (get available listing) ERR_LISTING_NOT_FOUND)
     (asserts! (not (is-eq buyer seller)) ERR_CANNOT_BUY_OWN_ENERGY)
     (asserts! (>= (get amount listing) amount) ERR_INSUFFICIENT_ENERGY)
     (asserts! (>= (get balance buyer-data) total-cost) ERR_INSUFFICIENT_BALANCE)
     (map-set users buyer
-      (merge buyer-data 
-        {
-          balance: (- (get balance buyer-data) total-cost),
-          energy-consumed: (+ (get energy-consumed buyer-data) amount)
-        }
+      (merge buyer-data
+        (if is-first-trade
+          {
+            balance: (- (get balance buyer-data) total-cost),
+            energy-consumed: (+ (get energy-consumed buyer-data) amount),
+            has-traded: true
+          }
+          {
+            balance: (- (get balance buyer-data) total-cost),
+            energy-consumed: (+ (get energy-consumed buyer-data) amount),
+            has-traded: true
+          }
+        )
       )
     )
     (map-set users seller
@@ -219,6 +234,16 @@
     (var-set total-energy-supply (if (>= (var-get total-energy-supply) amount)
       (- (var-get total-energy-supply) amount)
       u0))
+    (if is-first-trade
+      (match (get referrer buyer-data)
+        some-referrer (match (map-get? users some-referrer)
+                      some-data (begin
+                                  (try! (as-contract (stx-transfer? REFERRAL_REWARD tx-sender some-referrer)))
+                                  (map-set users some-referrer (merge some-data {balance: (+ (get balance some-data) REFERRAL_REWARD)}))
+                                  true)
+                      false)
+        true)
+      true)
     (let ((price-result (update-market-price)))
       (ok trade-id))
   )

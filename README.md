@@ -1,4 +1,4 @@
-# ⚡ Microgrid Energy Sharing for Rural Communities
+#  Microgrid Energy Sharing for Rural Communities
 
 A blockchain-based peer-to-peer renewable energy sharing platform built on Stacks, empowering rural communities with affordable and reliable electricity access through decentralized energy trading.
 
@@ -11,6 +11,7 @@ A blockchain-based peer-to-peer renewable energy sharing platform built on Stack
 - 🌱 **Renewable Energy Incentives** - Bonus rewards for green energy producers
 - 📍 **Location-based Trading** - Trade within your local community
 - ⏸️ **Emergency Controls** - Admin pause/resume functionality
+- 🔗 **Referral Reward System** - Earn STX rewards by referring new users to the platform
 
 ## 🚀 Quick Start
 
@@ -30,10 +31,11 @@ npm install
 
 ### 1️⃣ Register as User
 ```clarity
-(contract-call? .contract register-user "Rural Village A" true)
+(contract-call? .contract register-user "Rural Village A" true none)
 ```
 - `location`: Your community location (max 50 chars)
 - `is-producer`: Set to `true` if you generate energy, `false` if consumer only
+- `referrer`: Optional principal of the user who referred you (use `none` if no referrer)
 
 ### 2️⃣ Deposit Funds
 ```clarity
@@ -86,10 +88,25 @@ Deposit STX tokens to your account balance for energy purchases.
 (contract-call? .contract estimate-trade-cost u1 u25)
 ```
 
+## 🔗 Referral Reward System
+
+Earn STX rewards by bringing new users to the platform!
+
+### Referring a New User
+When registering, include your referrer's address:
+```clarity
+(contract-call? .contract register-user "Rural Village B" false (some 'SP1REFERRER...))
+```
+
+### Earning Rewards
+- Receive 10 STX automatically when your referred user completes their first energy trade
+- One-time reward per successful referral
+- Builds community growth and engagement
+
 ## 🏗️ Contract Architecture
 
 ### Core Components
-- **Users Map**: Stores user profiles, balances, and energy statistics
+- **Users Map**: Stores user profiles, balances, energy statistics, and referral data
 - **Energy Listings**: Available energy for sale with pricing
 - **Trades**: Historical transaction records
 - **Smart Meter Readings**: Time-stamped energy data
@@ -142,6 +159,7 @@ Empowering rural communities with:
 - 💪 Energy independence and resilience
 - 🤝 Stronger community cooperation
 - 📊 Transparent energy marketplace
+- 🔗 Viral user growth via referral incentives
 
 ---
 
