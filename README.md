@@ -12,6 +12,7 @@ A blockchain-based peer-to-peer renewable energy sharing platform built on Stack
 - 📍 **Location-based Trading** - Trade within your local community
 - ⏸️ **Emergency Controls** - Admin pause/resume functionality
 - 🔗 **Referral Reward System** - Earn STX rewards by referring new users to the platform
+- 🚨 **Community Emergency Fund** - Collective fund for disaster relief and community support
 
 ## 🚀 Quick Start
 
@@ -88,6 +89,45 @@ Deposit STX tokens to your account balance for energy purchases.
 (contract-call? .contract estimate-trade-cost u1 u25)
 ```
 
+### Check Emergency Fund Balance
+```clarity
+(contract-call? .contract get-emergency-fund-balance)
+```
+
+### Contribute to Emergency Fund
+```clarity
+(contract-call? .contract contribute-to-emergency-fund u50000)
+```
+Contribute STX tokens to the community emergency fund for disaster relief.
+
+### Distribute Emergency Fund (Admin Only)
+```clarity
+(contract-call? .contract distribute-emergency-fund (list 'SP1RECIPIENT1... 'SP1RECIPIENT2...) (list u25000 u25000))
+```
+Admin function to distribute funds to affected community members during emergencies.
+
+## 🚨 Community Emergency Fund
+
+A collective fund built by community contributions to provide rapid assistance during natural disasters, equipment failures, or other emergencies affecting energy access.
+
+### Contributing to the Fund
+Community members can voluntarily contribute STX tokens:
+```clarity
+(contract-call? .contract contribute-to-emergency-fund u50000)
+```
+- Contributions are stored securely in the contract
+- Builds resilience for the entire community
+- Transparent fund balance tracking
+
+### Emergency Distribution
+During crises, the contract owner can distribute funds to affected members:
+```clarity
+(contract-call? .contract distribute-emergency-fund (list 'SP1RECIPIENT1... 'SP1RECIPIENT2...) (list u25000 u25000))
+```
+- Admin-controlled distribution ensures responsible use
+- Direct transfers to verified community members
+- Helps maintain energy access during emergencies
+
 ## 🔗 Referral Reward System
 
 Earn STX rewards by bringing new users to the platform!
@@ -117,6 +157,8 @@ When registering, include your referrer's address:
 - `buy-energy` - Purchase energy from other users
 - `record-meter-reading` - Log smart meter data
 - `deposit-funds`/`withdraw-funds` - Manage account balance
+- `contribute-to-emergency-fund` - Add to community emergency fund
+- `distribute-emergency-fund` - Admin distribution during emergencies
 
 ## 🔒 Security Features
 
@@ -160,6 +202,7 @@ Empowering rural communities with:
 - 🤝 Stronger community cooperation
 - 📊 Transparent energy marketplace
 - 🔗 Viral user growth via referral incentives
+- 🚨 Disaster resilience through community emergency fund
 
 ---
 

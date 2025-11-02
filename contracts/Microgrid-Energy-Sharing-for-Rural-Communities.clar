@@ -23,6 +23,8 @@
 (define-data-var listing-nonce uint u0)
 (define-data-var trade-nonce uint u0)
 
+(define-data-var community-emergency-fund uint u0)
+
 (define-map users
   principal
   {
@@ -550,5 +552,44 @@
         price-multiplier: u100
       }
     )
+  )
+)
+
+(define-read-only (get-emergency-fund-balance)
+  (var-get community-emergency-fund)
+)
+
+(define-public (contribute-to-emergency-fund (amount uint))
+  (let ((user tx-sender)
+        (user-data (unwrap! (map-get? users user) ERR_INVALID_USER)))
+    (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
+    (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+    (asserts! (>= (get balance user-data) amount) ERR_INSUFFICIENT_BALANCE)
+    (try! (stx-transfer? amount user (as-contract tx-sender)))
+    (map-set users user
+      (merge user-data {balance: (- (get balance user-data) amount)})
+    )
+    (var-set community-emergency-fund (+ (var-get community-emergency-fund) amount))
+    (ok amount)
+  )
+)
+
+(define-public (distribute-emergency-fund (recipients (list 10 principal)) (amounts (list 10 uint)))
+  (let ((total-distribution (fold + amounts u0)))
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_NOT_AUTHORIZED)
+    (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
+    (asserts! (>= (var-get community-emergency-fund) total-distribution) ERR_INSUFFICIENT_BALANCE)
+    (var-set community-emergency-fund (- (var-get community-emergency-fund) total-distribution))
+    (ok (map distribute-to-recipient recipients amounts))
+  )
+)
+
+(define-private (distribute-to-recipient (recipient principal) (amount uint))
+  (let ((recipient-data (unwrap! (map-get? users recipient) ERR_INVALID_USER)))
+    (try! (as-contract (stx-transfer? amount tx-sender recipient)))
+    (map-set users recipient
+      (merge recipient-data {balance: (+ (get balance recipient-data) amount)})
+    )
+    (ok amount)
   )
 )
