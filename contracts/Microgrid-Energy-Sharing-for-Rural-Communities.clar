@@ -22,6 +22,7 @@
 (define-data-var total-users uint u0)
 (define-data-var listing-nonce uint u0)
 (define-data-var trade-nonce uint u0)
+(define-data-var auction-nonce uint u0)
 
 (define-data-var community-emergency-fund uint u0)
 
@@ -75,6 +76,24 @@
   }
 )
 
+(define-map auctions
+  uint
+  {
+    listing-id: uint,
+    seller: principal,
+    min-price: uint,
+    end-time: uint,
+    highest-bid: uint,
+    highest-bidder: (optional principal),
+    active: bool
+  }
+)
+
+(define-map bids
+  {auction-id: uint, bidder: principal}
+  uint
+)
+
 (define-read-only (get-user-info (user principal))
   (map-get? users user)
 )
@@ -97,6 +116,10 @@
 
 (define-read-only (get-meter-reading (user principal) (timestamp uint))
   (map-get? smart-meter-readings {user: user, timestamp: timestamp})
+)
+
+(define-read-only (get-auction-info (auction-id uint))
+  (map-get? auctions auction-id)
 )
 
 (define-read-only (calculate-energy-cost (amount uint) (price-per-kwh uint))
@@ -591,5 +614,102 @@
       (merge recipient-data {balance: (+ (get balance recipient-data) amount)})
     )
     (ok amount)
+  )
+)
+
+(define-public (start-auction (listing-id uint) (min-price uint) (duration uint))
+  (let ((user tx-sender)
+        (listing (unwrap! (map-get? energy-listings listing-id) ERR_LISTING_NOT_FOUND))
+        (auction-id (+ (var-get auction-nonce) u1)))
+    (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
+    (asserts! (is-eq user (get seller listing)) ERR_NOT_AUTHORIZED)
+    (asserts! (get available listing) ERR_LISTING_NOT_FOUND)
+    (asserts! (> min-price u0) ERR_INVALID_AMOUNT)
+    (asserts! (> duration u0) ERR_INVALID_AMOUNT)
+    (map-set energy-listings listing-id (merge listing {available: false}))
+    (map-set auctions auction-id
+      {
+        listing-id: listing-id,
+        seller: user,
+        min-price: min-price,
+        end-time: (+ stacks-block-height duration),
+        highest-bid: u0,
+        highest-bidder: none,
+        active: true
+      }
+    )
+    (var-set auction-nonce auction-id)
+    (ok auction-id)
+  )
+)
+
+(define-public (place-bid (auction-id uint) (bid-amount uint))
+  (let ((bidder tx-sender)
+        (auction (unwrap! (map-get? auctions auction-id) ERR_LISTING_NOT_FOUND))
+        (bidder-data (unwrap! (map-get? users bidder) ERR_INVALID_USER))
+        (current-highest (get highest-bid auction)))
+    (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
+    (asserts! (get active auction) ERR_LISTING_NOT_FOUND)
+    (asserts! (< stacks-block-height (get end-time auction)) ERR_INVALID_AMOUNT)
+    (asserts! (> bid-amount (get min-price auction)) ERR_INVALID_AMOUNT)
+    (asserts! (> bid-amount current-highest) ERR_INVALID_AMOUNT)
+    (asserts! (>= (get balance bidder-data) bid-amount) ERR_INSUFFICIENT_BALANCE)
+    (if (is-some (get highest-bidder auction))
+      (let ((prev-bidder (unwrap-panic (get highest-bidder auction)))
+            (prev-bid (unwrap-panic (map-get? bids {auction-id: auction-id, bidder: prev-bidder}))))
+        (try! (as-contract (stx-transfer? prev-bid tx-sender prev-bidder)))
+        (map-set users prev-bidder (merge (unwrap! (map-get? users prev-bidder) ERR_INVALID_USER) {balance: (+ (get balance (unwrap! (map-get? users prev-bidder) ERR_INVALID_USER)) prev-bid)}))
+      )
+      true
+    )
+    (try! (stx-transfer? bid-amount bidder (as-contract tx-sender)))
+    (map-set users bidder (merge bidder-data {balance: (- (get balance bidder-data) bid-amount)}))
+    (map-set bids {auction-id: auction-id, bidder: bidder} bid-amount)
+    (map-set auctions auction-id (merge auction {highest-bid: bid-amount, highest-bidder: (some bidder)}))
+    (ok bid-amount)
+  )
+)
+
+(define-public (end-auction (auction-id uint))
+  (let ((auction (unwrap! (map-get? auctions auction-id) ERR_LISTING_NOT_FOUND))
+        (seller (get seller auction))
+        (listing-id (get listing-id auction)))
+    (asserts! (var-get contract-active) ERR_NOT_AUTHORIZED)
+    (asserts! (get active auction) ERR_LISTING_NOT_FOUND)
+    (asserts! (>= stacks-block-height (get end-time auction)) ERR_INVALID_AMOUNT)
+    (map-set auctions auction-id (merge auction {active: false}))
+    (if (is-some (get highest-bidder auction))
+      (let ((winner (unwrap-panic (get highest-bidder auction)))
+            (final-bid (get highest-bid auction))
+            (listing (unwrap! (map-get? energy-listings listing-id) ERR_LISTING_NOT_FOUND))
+            (amount (get amount listing))
+            (trade-id (+ (var-get trade-nonce) u1))
+            (seller-data (unwrap! (map-get? users seller) ERR_INVALID_USER))
+            (winner-data (unwrap! (map-get? users winner) ERR_INVALID_USER)))
+        (try! (as-contract (stx-transfer? final-bid tx-sender seller)))
+        (map-set users seller (merge seller-data {balance: (+ (get balance seller-data) final-bid), energy-produced: (+ (get energy-produced seller-data) amount), reputation-score: (+ (get reputation-score seller-data) u1)}))
+        (map-set users winner (merge winner-data {energy-consumed: (+ (get energy-consumed winner-data) amount), has-traded: true}))
+        (map-set trades trade-id
+          {
+            buyer: winner,
+            seller: seller,
+            listing-id: listing-id,
+            amount: amount,
+            total-price: final-bid,
+            settled: true,
+            trade-time: stacks-block-height
+          }
+        )
+        (var-set trade-nonce trade-id)
+        (var-set total-energy-traded (+ (var-get total-energy-traded) amount))
+        (var-set total-energy-demand (+ (var-get total-energy-demand) amount))
+        (var-set total-energy-supply (if (>= (var-get total-energy-supply) amount) (- (var-get total-energy-supply) amount) u0))
+        (ok trade-id)
+      )
+      (begin
+        (map-set energy-listings listing-id (merge (unwrap! (map-get? energy-listings listing-id) ERR_LISTING_NOT_FOUND) {available: true}))
+        (ok u0)
+      )
+    )
   )
 )

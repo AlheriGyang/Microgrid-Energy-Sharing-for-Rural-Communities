@@ -13,6 +13,7 @@ A blockchain-based peer-to-peer renewable energy sharing platform built on Stack
 - ⏸️ **Emergency Controls** - Admin pause/resume functionality
 - 🔗 **Referral Reward System** - Earn STX rewards by referring new users to the platform
 - 🚨 **Community Emergency Fund** - Collective fund for disaster relief and community support
+- 🛎️ **Energy Auction System** - Competitive bidding for energy listings to enable dynamic pricing
 
 ## 🚀 Quick Start
 
@@ -128,6 +129,37 @@ During crises, the contract owner can distribute funds to affected members:
 - Direct transfers to verified community members
 - Helps maintain energy access during emergencies
 
+## 🛎️ Energy Auction System
+
+Ignite competitive energy trading with our auction feature! Producers can auction their energy listings for dynamic pricing, allowing buyers to bid and potentially secure better deals.
+
+### Start an Auction (Producers Only)
+```clarity
+(contract-call? .contract start-auction u1 u100 u1440)
+```
+- `listing-id`: ID of the energy listing to auction
+- `min-price`: Minimum bid price in micro-STX
+- `duration`: Auction duration in blocks (1440 blocks ≈ 1 day)
+
+### Place a Bid
+```clarity
+(contract-call? .contract place-bid u1 u150)
+```
+- `auction-id`: ID of the auction
+- `bid-amount`: Your bid in micro-STX (must exceed current highest bid)
+
+### End Auction
+```clarity
+(contract-call? .contract end-auction u1)
+```
+Finalize the auction after the duration ends. The highest bidder wins the energy at their bid price.
+
+### Check Auction Info
+```clarity
+(contract-call? .contract get-auction-info u1)
+```
+Retrieve details about a specific auction.
+
 ## 🔗 Referral Reward System
 
 Earn STX rewards by bringing new users to the platform!
@@ -150,6 +182,8 @@ When registering, include your referrer's address:
 - **Energy Listings**: Available energy for sale with pricing
 - **Trades**: Historical transaction records
 - **Smart Meter Readings**: Time-stamped energy data
+- **Auctions Map**: Manages auction details for competitive bidding
+- **Bids Map**: Tracks individual bids per auction
 
 ### Key Functions
 - `register-user` - Join the energy sharing network
@@ -159,6 +193,9 @@ When registering, include your referrer's address:
 - `deposit-funds`/`withdraw-funds` - Manage account balance
 - `contribute-to-emergency-fund` - Add to community emergency fund
 - `distribute-emergency-fund` - Admin distribution during emergencies
+- `start-auction` - Initiate an auction for an energy listing
+- `place-bid` - Submit a bid on an active auction
+- `end-auction` - Finalize auction and settle trade
 
 ## 🔒 Security Features
 
@@ -203,6 +240,7 @@ Empowering rural communities with:
 - 📊 Transparent energy marketplace
 - 🔗 Viral user growth via referral incentives
 - 🚨 Disaster resilience through community emergency fund
+- 🛎️ Dynamic pricing via competitive auctions for optimal market efficiency
 
 ---
 
